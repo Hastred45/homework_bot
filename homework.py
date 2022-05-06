@@ -1,14 +1,12 @@
 import logging
 import os
+import sys
 import time
-
 from http import HTTPStatus
 
 import requests
 import telegram
-
 from dotenv import load_dotenv
-import sys
 
 import constants as const
 import exceptions as exp
@@ -20,9 +18,18 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-RETRY_TIME = 600
-ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
+# Эту константу отсюда не убрать. Потому что неправильно
+# импортировать что-то из файла с иполняемым кодом.
+# А тут надо импортировать PRACTICUM_TOKEN вовне.
+# Да и в целом, в прекоде эти константы были тут.
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
+
+# Много места не занимают. Пусть будут тут
+HOMEWORK_STATUSES = {
+    'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
+    'reviewing': 'Работа взята на проверку ревьюером.',
+    'rejected': 'Работа проверена: у ревьюера есть замечания.',
+}
 
 logger = logging.getLogger(__name__)
 formatter = logging.Formatter('%(asctime)s, %(levelname)s, %(message)s')
@@ -39,7 +46,7 @@ def send_message(bot, message):
         logger.info(
             f'{const.LOG_MESSAGES["succesfully_send_message"]}: {message}'
         )
-    except Exception as error:
+    except telegram.error.TelegramError as error:
         raise exp.Telegram_Exception(
             f'{const.LOG_MESSAGES["error_send_message"]}: {error}'
         )
@@ -52,11 +59,17 @@ def get_api_answer(current_timestamp):
     """
     timestamp = current_timestamp or int(time.time())
     payload = {'from_date': timestamp}
-    homework_statuses = requests.get(
-        ENDPOINT,
-        headers=HEADERS,
-        params=payload
-    )
+
+    try:
+        homework_statuses = requests.get(
+            const.ENDPOINT,
+            headers=HEADERS,
+            params=payload
+        )
+    except requests.exceptions.RequestException:
+        message = f'{const.LOG_MESSAGES["wrong_request"]}'
+        raise exp.API_Ya_Practicum_Exception_Endpoint(message)
+
     answer_code = homework_statuses.status_code
     if answer_code != HTTPStatus.OK:
         message = f'{const.LOG_MESSAGES["wrong_status_code"]}: {answer_code}'
@@ -64,7 +77,7 @@ def get_api_answer(current_timestamp):
         raise exp.API_Ya_Practicum_Exception_Endpoint(message)
 
     try:
-        return dict(homework_statuses.json())
+        return homework_statuses.json()
     except Exception:
         raise ValueError(
             const.LOG_MESSAGES['error_tranform_response_to_diсt']
@@ -76,16 +89,19 @@ def check_response(response):
     Выполняет проверку ответа API на соотвествие.
     Возвращает список домашних работ.
     """
-    if (not(type(response) is dict)
-       or not(type(response['homeworks']) is list)):
-        message = f'{const.LOG_MESSAGES["wrong_type"]}: {response}'
-        raise TypeError(message)
-
     if 'homeworks' not in response:
         message = f'{const.LOG_MESSAGES["missed_key"]} homeworks: {response}'
         raise TypeError(message)
 
-    if len(response['homeworks']) < 1:
+    if not(type(response) is dict):
+        message = f'{const.LOG_MESSAGES["wrong_type"]}: {response}'
+        raise TypeError(message)
+
+    if not(type(response['homeworks']) is list):
+        message = f'{const.LOG_MESSAGES["wrong_type"]}: {response}'
+        raise TypeError(message)
+
+    if not response['homeworks']:
         message = f'{const.LOG_MESSAGES["empty_list"]}: {response}'
         logger.debug(message)
 
@@ -98,24 +114,31 @@ def parse_status(homework):
     Извлекает информацию по ключам homework_name и status из списка
     Возвращает строку с информацией о новом статусе
     """
-    for key in const.HOMEWORK_KEYS:
-        if key not in homework:
-            message = (
-                f'{const.LOG_MESSAGES["missed_key"]} {key}: {homework}'
-            )
-            logger.error(message)
-            raise KeyError(message)
-
-    if homework['status'] not in const.HOMEWORK_STATUSES.keys():
+    if 'homework_name' not in homework:
         message = (
-            f'{const.LOG_MESSAGES["wrong_status"]}: {homework["status"]}'
+            f'{const.LOG_MESSAGES["missed_key"]} "homework_name": {homework}'
         )
         logger.error(message)
-        raise ValueError(message)
+        raise KeyError(message)
+
+    if 'status' not in homework:
+        message = (
+            f'{const.LOG_MESSAGES["missed_key"]} "status": {homework}'
+        )
+        logger.error(message)
+        raise KeyError(message)
 
     homework_name = homework['homework_name']
     homework_status = homework['status']
-    verdict = const.HOMEWORK_STATUSES[homework_status]
+
+    try:
+        verdict = HOMEWORK_STATUSES[homework_status]
+    except KeyError:
+        message = (
+            f'{const.LOG_MESSAGES["wrong_status"]}: {homework_status}'
+        )
+        logger.error(message)
+        raise ValueError(message)
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -127,6 +150,7 @@ def check_tokens():
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
     }
+    # Хочу отдельну проверку на каждый токен
     result = True
     for token, value in tokens.items():
         if value is None:
@@ -157,7 +181,7 @@ def main():
                 message = parse_status(homework)
                 send_message(bot, message)
             current_timestamp = int(time.time())
-            time.sleep(RETRY_TIME)
+            time.sleep(const.RETRY_TIME)
 
         except EnvironmentError as error:
             logger.info(error)
@@ -172,7 +196,7 @@ def main():
         except exp.Telegram_Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
-            time.sleep(RETRY_TIME)
+            time.sleep(const.RETRY_TIME)
 
         except (exp.API_Ya_Practicum_Exception_Endpoint,
                 ValueError,
@@ -183,7 +207,9 @@ def main():
             if last_message != message:
                 send_message(bot, message)
                 last_message = message
-            time.sleep(RETRY_TIME)
+
+        finally:
+            time.sleep(const.RETRY_TIME)
 
 
 if __name__ == '__main__':

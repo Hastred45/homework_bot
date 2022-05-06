@@ -4,13 +4,6 @@
 HOMEWORK_STATUSES - статусы работ
 LOG_MESSAGES - сообщения логирования
 """
-HOMEWORK_STATUSES = {
-    'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
-    'reviewing': 'Работа взята на проверку ревьюером.',
-    'rejected': 'Работа проверена: у ревьюера есть замечания.',
-}
-
-HOMEWORK_KEYS = {'homework_name', 'status'}
 
 LOG_MESSAGES = {
     'app_start': 'homework_bot started ...',
@@ -23,6 +16,10 @@ LOG_MESSAGES = {
     'missed_env': 'Отсутствуют переменные окружения',
     'missed_key': 'В ответе отсуствует ключ',
     'wrong_status': 'Статус работы отличается от ожидаемых',
-    'wrong_status_code': 'API Yandex практикума вернул код <> OK',
+    'wrong_status_code': 'API Yandex практикума вернул код ',
     'wrong_type': 'API вернул ответ некорректного типа',
+    'wrong_request': 'API не ответил на запрос',
 }
+
+RETRY_TIME = 600
+ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
