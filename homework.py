@@ -18,10 +18,6 @@ PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-# Эту константу отсюда не убрать. Потому что неправильно
-# импортировать что-то из файла с иполняемым кодом.
-# А тут надо импортировать PRACTICUM_TOKEN вовне.
-# Да и в целом, в прекоде эти константы были тут.
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
 
@@ -144,7 +140,6 @@ def check_tokens():
         'TELEGRAM_TOKEN': TELEGRAM_TOKEN,
         'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID,
     }
-    # Хочу отдельну проверку на каждый токен
     result = True
     for token, value in tokens.items():
         if value is None:
@@ -177,14 +172,7 @@ def main():
             current_timestamp = int(time.time())
 
         except EnvironmentError as error:
-            logger.info(error)
-            return
-
-        except KeyboardInterrupt:
-            message = const.LOG_MESSAGES['app_stop']
-            logger.info(message)
-            send_message(bot, message)
-            return
+            logger.error(error)
 
         except exp.Telegram_Exception as error:
             message = f'Сбой в работе программы: {error}'
@@ -205,4 +193,8 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        message = const.LOG_MESSAGES['app_stop']
+        logger.info(message)
