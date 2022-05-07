@@ -8,7 +8,7 @@ import requests
 import telegram
 from dotenv import load_dotenv
 
-import constants as const
+import settings as const
 import exceptions as exp
 
 load_dotenv()
@@ -24,12 +24,6 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 # Да и в целом, в прекоде эти константы были тут.
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
-# Много места не занимают. Пусть будут тут
-HOMEWORK_STATUSES = {
-    'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
-    'reviewing': 'Работа взята на проверку ревьюером.',
-    'rejected': 'Работа проверена: у ревьюера есть замечания.',
-}
 
 logger = logging.getLogger(__name__)
 formatter = logging.Formatter('%(asctime)s, %(levelname)s, %(message)s')
@@ -89,12 +83,12 @@ def check_response(response):
     Выполняет проверку ответа API на соотвествие.
     Возвращает список домашних работ.
     """
-    if 'homeworks' not in response:
-        message = f'{const.LOG_MESSAGES["missed_key"]} homeworks: {response}'
-        raise TypeError(message)
-
     if not(type(response) is dict):
         message = f'{const.LOG_MESSAGES["wrong_type"]}: {response}'
+        raise TypeError(message)
+
+    if 'homeworks' not in response:
+        message = f'{const.LOG_MESSAGES["missed_key"]} homeworks: {response}'
         raise TypeError(message)
 
     if not(type(response['homeworks']) is list):
@@ -131,14 +125,14 @@ def parse_status(homework):
     homework_name = homework['homework_name']
     homework_status = homework['status']
 
-    try:
-        verdict = HOMEWORK_STATUSES[homework_status]
-    except KeyError:
+    if homework_status not in const.HOMEWORK_STATUSES:
         message = (
             f'{const.LOG_MESSAGES["wrong_status"]}: {homework_status}'
         )
         logger.error(message)
         raise ValueError(message)
+
+    verdict = const.HOMEWORK_STATUSES[homework_status]
 
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
@@ -181,7 +175,6 @@ def main():
                 message = parse_status(homework)
                 send_message(bot, message)
             current_timestamp = int(time.time())
-            time.sleep(const.RETRY_TIME)
 
         except EnvironmentError as error:
             logger.info(error)
@@ -196,7 +189,6 @@ def main():
         except exp.Telegram_Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.error(message)
-            time.sleep(const.RETRY_TIME)
 
         except (exp.API_Ya_Practicum_Exception_Endpoint,
                 ValueError,
